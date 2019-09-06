@@ -11,33 +11,6 @@ from common.TimeseriesTensor import TimeSeriesTensor
 from common.gp_log import store_training_loss, store_predict_points, flatten_test_predict
 from common.utils import load_data, split_train_validation_test, mape, load_data_one_source, load_data_full
 
-
-
-
-from sklearn.metrics import explained_variance_score
-from sklearn.metrics import mean_absolute_error
-from sklearn.metrics import mean_squared_error
-from sklearn.metrics import mean_squared_log_error
-from sklearn.metrics import median_absolute_error
-from sklearn.metrics import r2_score
-from math import sqrt
-
-#!/usr/bin/env python
-# coding: utf-8
-from keras.callbacks import EarlyStopping
-import pandas as pd
-from keras.layers.core import RepeatVector
-from keras.layers.recurrent import GRU
-from keras.layers.wrappers import TimeDistributed
-from pandas import DatetimeIndex
-
-from common.TimeseriesTensor import TimeSeriesTensor
-from common.gp_log import store_training_loss, store_predict_points, flatten_test_predict
-from common.utils import load_data, split_train_validation_test, mape, load_data_one_source
-
-
-
-
 from sklearn.metrics import explained_variance_score
 from sklearn.metrics import mean_absolute_error
 from sklearn.metrics import mean_squared_error
@@ -62,8 +35,6 @@ if __name__ == '__main__':
     print(multi_time_series.head())
 
     print("count data rows=", multi_time_series.count)
-
-    # print(multi_time_series.iloc[28051, :])
 
     valid_start_dt = '2013-05-26 14:15:00'
     test_start_dt = '2014-03-14 19:15:00'
@@ -101,7 +72,11 @@ if __name__ == '__main__':
 
     model = Sequential()
     model.add(GRU(LATENT_DIM, input_shape=(time_step_lag, 1)))
-    model.add(Dense(HORIZON))
+    model.add(RepeatVector(HORIZON))
+    model.add(GRU(LATENT_DIM, return_sequences=True))
+    model.add(TimeDistributed(Dense(1)))
+    model.add(Flatten())
+
     model.compile(optimizer='RMSprop', loss='mse')
     model.summary()
 

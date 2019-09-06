@@ -11,9 +11,6 @@ from common.TimeseriesTensor import TimeSeriesTensor
 from common.gp_log import store_training_loss, store_predict_points, flatten_test_predict
 from common.utils import load_data, split_train_validation_test, mape, load_data_one_source, load_data_full
 
-
-
-
 from sklearn.metrics import explained_variance_score
 from sklearn.metrics import mean_absolute_error
 from sklearn.metrics import mean_squared_error
@@ -50,23 +47,19 @@ def RMSE(x):
     return sqrt(x)
 
 if __name__ == '__main__':
-    time_step_lag = 12
+    time_step_lag = 6
     HORIZON = 1
 
-    imfs_count = 0 # set equal to zero for not considering IMFs features
+    imfs_count = 0  # set equal to zero for not considering IMFs features
 
-    data_dir = '/home/ope/Documents/Projects/self-boosted-ts/data/'
-    output_dir = '/home/ope/Documents/Projects/self-boosted-ts/output/electricity'
+    data_dir = '/home/long/TTU-SOURCES/self-boosted-ts/data'
+    output_dir = '/home/long/TTU-SOURCES/self-boosted-ts/output/temperature'
 
-    multi_time_series = load_data_full(data_dir, datasource='electricity', imfs_count=imfs_count)
+    multi_time_series = load_data_full(data_dir, datasource='temperature', imfs_count=imfs_count)
     print(multi_time_series.head())
 
-    print("count data rows=", multi_time_series.count)
-
-    # print(multi_time_series.iloc[28051, :])
-
-    valid_start_dt = '2013-05-26 14:15:00'
-    test_start_dt = '2014-03-14 19:15:00'
+    valid_start_dt = '2004-10-30 14:00:00'
+    test_start_dt = '2005-01-16 13:00:00'
 
     train_inputs, valid_inputs, test_inputs, y_scaler = split_train_validation_test(multi_time_series,
                                                                                     valid_start_time=valid_start_dt,
@@ -96,15 +89,27 @@ if __name__ == '__main__':
     from keras.callbacks import EarlyStopping, ModelCheckpoint
 
     LATENT_DIM = 5
+    KERNEL_SIZE = 2
+
     BATCH_SIZE = 32
     EPOCHS = 100
 
     model = Sequential()
-    model.add(GRU(LATENT_DIM, input_shape=(time_step_lag, 1)))
-    model.add(Dense(HORIZON))
-    model.compile(optimizer='RMSprop', loss='mse')
+    # conv = Conv1D(kernel_size=3, filters=5, activation='relu')(x)
+
+    model.add(
+        Conv1D(LATENT_DIM, kernel_size=KERNEL_SIZE, padding='causal', strides=1, activation='relu', dilation_rate=1,
+               input_shape=(time_step_lag, 1)))
+    model.add(
+        Conv1D(LATENT_DIM, kernel_size=KERNEL_SIZE, padding='causal', strides=1, activation='relu', dilation_rate=2))
+    model.add(
+        Conv1D(LATENT_DIM, kernel_size=KERNEL_SIZE, padding='causal', strides=1, activation='relu', dilation_rate=4))
+    model.add(Flatten())
+    model.add(Dense(HORIZON, activation='linear'))
+
     model.summary()
 
+    model.compile(optimizer='Adam', loss='mse', metrics=['mae', 'mape', 'mse'])
     earlystop = EarlyStopping(monitor='val_mse', patience=5)
     history = model.fit(X_train,
                         y_train,
@@ -137,4 +142,7 @@ if __name__ == '__main__':
 
     print("mse:", mse, 'rmse_predict:', rmse_predict, "mae:", mae, "mape:", mape_v, "r2:", r_square,
           "meae:", meae, "evs:", evs)
+
+
+
 

@@ -5,3 +5,13 @@ learning-examples/checkpoints/
 learning-examples/data/
 common/__pycache__/
 __pycache__/
+octave-workspace
+learning-examples/output/
+solar-power/time_exchange_rage.csv
+metrics/
+solar-power/solar-power.csv
+exchange_rates/time_exchange_rage.csv
+
+
+
+results/
