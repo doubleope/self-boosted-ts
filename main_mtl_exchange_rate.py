@@ -20,13 +20,14 @@ import os
 
 if __name__ == '__main__':
 
-    time_step_lag = 3
+    time_step_lag = 6
     HORIZON = 1
 
     imfs_count = 11
 
     data_dir = 'data'
-    output_dir = 'output/exchange-rate/mtl/lag' + str(time_step_lag)
+    # output_dir = 'output/exchange-rate/mtl/lag' + str(time_step_lag)
+    output_dir = 'output/exchange-rate/mtl_mtv/horizon_' + str(HORIZON) + '/lag' + str(time_step_lag)
 
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(output_dir + '/model_checkpoint', exist_ok=True)
@@ -38,6 +39,7 @@ if __name__ == '__main__':
     test_start_dt = '2006-08-13'
 
     features = ["load", "imf9", "imf10", "imf8", "imf7"]
+    targets = ["load", "imf9", "imf10", "imf8", "imf7"]
 
     train_inputs, valid_inputs, test_inputs, y_scaler = split_train_validation_test(multi_time_series,
                                                      valid_start_time=valid_start_dt,
@@ -45,7 +47,7 @@ if __name__ == '__main__':
                                                      time_step_lag=time_step_lag,
                                                      horizon=HORIZON,
                                                      features=features,
-                                                     target=features,
+                                                     target=targets,
                                                     time_format = '%Y-%m-%d',
                                                     freq = 'd'
                                                         )
@@ -98,12 +100,12 @@ if __name__ == '__main__':
 
     # LATENT_DIM = 5
     BATCH_SIZE = 32
-    EPOCHS = 100
+    EPOCHS = 30
 
     model = create_model_mtl_mtv_exchange_rate(horizon=HORIZON, nb_train_samples=len(X_train),
                                  batch_size=32, feature_count=len(features), lag_time=time_step_lag,
                                                aux_feature_count=len(aux_features))
-    earlystop = EarlyStopping(monitor='val_mse', patience=5)
+    earlystop = EarlyStopping(monitor='loss', patience=5)
 
     file_path = output_dir + '/model_checkpoint/weights-improvement-{epoch:02d}.hdf5'
     check_point = ModelCheckpoint(file_path, monitor='val_loss', verbose=0, save_best_only=True,

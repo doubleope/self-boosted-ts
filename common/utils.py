@@ -7,6 +7,7 @@ from pandas.core.indexes.datetimes import DatetimeIndex
 import datetime as dt
 
 from sklearn.preprocessing.data import MinMaxScaler
+from sklearn.preprocessing.data import StandardScaler
 
 from common.TimeseriesTensor import TimeSeriesTensor
 from sklearn.utils import check_array
@@ -50,6 +51,66 @@ def load_data(data_dir):
 
     return df
 
+
+def load_dwt_seasonal_data(data_dir, datasource='electricity', mode='additive', target_component='Observed'):
+    df = None
+    valid_start_dt = None
+    test_start_dt = None
+    freq = 'H'
+    if datasource == 'electricity':
+        df = pd.read_csv(os.path.join(data_dir, mode + "_seasonal_electricity.csv"), sep=',', header=0, index_col=0, parse_dates=True)
+        valid_start_dt = '2013-05-26 14:15:00'
+        test_start_dt = '2014-03-14 19:15:00'
+        freq = 'H'
+
+    elif datasource == 'temperature':
+        df = pd.read_csv(os.path.join(data_dir, mode + "_seasonal_temperature.csv"), sep=',', header=0, index_col=0, parse_dates=True)
+        valid_start_dt = '2004-10-30 14:00:00'
+        test_start_dt = '2005-01-16 13:00:00'
+        freq = 'H'
+
+    elif datasource == 'exchange-rate':
+        valid_start_dt = '2002-06-18'
+        test_start_dt = '2006-08-13'
+        freq = 'd'
+
+        df = pd.read_csv(os.path.join(data_dir, mode + "_seasonal_exchange_rate.csv"), sep=',', header=0, index_col=0, parse_dates=True)
+    else:
+        raise Exception('Not support the data source:', datasource)
+
+    df.rename(columns={target_component: 'load'}, inplace=True)
+
+    return df, valid_start_dt, test_start_dt, freq
+
+def load_seasonal_data(data_dir, datasource='electricity', mode='additive'):
+    df = None
+    valid_start_dt = None
+    test_start_dt = None
+    freq = 'H'
+    if datasource == 'electricity':
+        df = pd.read_csv(os.path.join(data_dir, mode + "_seasonal_electricity.csv"), sep=',', header=0, index_col=0, parse_dates=True)
+        valid_start_dt = '2013-05-26 14:15:00'
+        test_start_dt = '2014-03-14 19:15:00'
+        freq = 'H'
+
+    elif datasource == 'temperature':
+        df = pd.read_csv(os.path.join(data_dir, mode + "_seasonal_temperature.csv"), sep=',', header=0, index_col=0, parse_dates=True)
+        valid_start_dt = '2004-10-30 14:00:00'
+        test_start_dt = '2005-01-16 13:00:00'
+        freq = 'H'
+
+    elif datasource == 'exchange-rate':
+        valid_start_dt = '2002-06-18'
+        test_start_dt = '2006-08-13'
+        freq = 'd'
+
+        df = pd.read_csv(os.path.join(data_dir, mode + "_seasonal_exchange_rate.csv"), sep=',', header=0, index_col=0, parse_dates=True)
+    else:
+        raise Exception('Not support the data source:', datasource)
+
+    df.rename(columns={'Observed': 'load'}, inplace=True)
+
+    return df, valid_start_dt, test_start_dt, freq
 
 def load_data_full(data_dir, datasource='electricity', imfs_count=13, freq='H'):
     """Load the GEFCom 2014 energy load data"""
@@ -117,20 +178,34 @@ def split_train_validation_test(multi_time_series_df, valid_start_time, test_sta
         raise Exception("Bad input for features. It must be an array of dataframe colummns used")
 
     train = multi_time_series_df.copy()[multi_time_series_df.index < valid_start_time]
-    train = train[features]
+    train_features = train[features]
+    train_targets = train[target]
 
-    X_scaler = MinMaxScaler()
+    # X_scaler = MinMaxScaler()
+    # target_scaler = MinMaxScaler()
+    # y_scaler = MinMaxScaler()
 
+    X_scaler = StandardScaler()
+    target_scaler = StandardScaler()
+    y_scaler = StandardScaler()
+
+
+    # 'load' is our key target. If it is in features, then we scale it.
+    # if it not 'load', then we scale the first column
     if 'load' in features:
-        y_scaler = MinMaxScaler()
-        y_scaler.fit(train[['load']])
+        tg = train[['load']]
+        y_scaler.fit(tg)
     else:
-        y_scaler = MinMaxScaler()
 
         tg = train[target]
+        ## scale the first column
         y_scaler.fit(tg.values.reshape(-1, 1))
 
-    train[features] = X_scaler.fit_transform(train)
+    train[target] = target_scaler.fit_transform(train_targets)
+
+
+    X_scaler.fit(train_features)
+    train[features] = X_scaler.transform(train_features)
 
     tensor_structure = {'X': (range(-time_step_lag + 1, 1), features)}
     train_inputs = TimeSeriesTensor(train, target=target, H=horizon, freq=freq, tensor_structure=tensor_structure)
@@ -140,8 +215,8 @@ def split_train_validation_test(multi_time_series_df, valid_start_time, test_sta
 
     look_back_dt = dt.datetime.strptime(valid_start_time, time_format) - dt.timedelta(hours=time_step_lag - 1)
     valid = multi_time_series_df.copy()[(multi_time_series_df.index >= look_back_dt) & (multi_time_series_df.index < test_start_time)]
-    valid = valid[features]
-    valid[features] = X_scaler.transform(valid)
+    valid_features = valid[features]
+    valid[features] = X_scaler.transform(valid_features)
     tensor_structure = {'X': (range(-time_step_lag + 1, 1), features)}
     valid_inputs = TimeSeriesTensor(valid, target=target, H=horizon, freq=freq, tensor_structure=tensor_structure)
 
@@ -150,8 +225,8 @@ def split_train_validation_test(multi_time_series_df, valid_start_time, test_sta
     # test set
     # look_back_dt = dt.datetime.strptime(test_start_time, '%Y-%m-%d %H:%M:%S') - dt.timedelta(hours=time_step_lag - 1)
     test = multi_time_series_df.copy()[test_start_time:]
-    test = test[features]
-    test[features] = X_scaler.transform(test)
+    test_features = test[features]
+    test[features] = X_scaler.transform(test_features)
     test_inputs = TimeSeriesTensor(test, target=target, H=horizon, freq=freq, tensor_structure=tensor_structure)
 
     print("time lag:", time_step_lag, "original_feature:", len(features))

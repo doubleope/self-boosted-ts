@@ -15,16 +15,24 @@ from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_squared_log_error
 from sklearn.metrics import median_absolute_error
 from sklearn.metrics import r2_score
+import os
 
 if __name__ == '__main__':
 
     time_step_lag = 6
     HORIZON = 1
+    EPOCHS = 50
 
     imfs_count = 12
 
     data_dir = 'data'
     output_dir = 'output/temperature'
+
+
+    output_dir = 'output/temperature/mtl_mtv/horizon_' + str(HORIZON) + '/lag' + str(time_step_lag)
+
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(output_dir + '/model_checkpoint', exist_ok=True)
 
     multi_time_series = load_data_full(data_dir, datasource='temperature', imfs_count=imfs_count)
     print(multi_time_series.head())
@@ -35,6 +43,7 @@ if __name__ == '__main__':
 
     # features = ["load", "imf9", "imf10", "imf11"]
     features = ["load", "imf9", "imf10", "imf11"]
+    targets = ["load", "imf9", "imf10", "imf11"]
 
     train_inputs, valid_inputs, test_inputs, y_scaler = split_train_validation_test(multi_time_series,
                                                      valid_start_time=valid_start_dt,
@@ -42,10 +51,11 @@ if __name__ == '__main__':
                                                      time_step_lag=time_step_lag,
                                                      horizon=HORIZON,
                                                      features=features,
-                                                     target=features
+                                                     target=targets
                                                      )
 
     aux_features = ['load', 'imf3', 'imf2', 'imf8', 'imf6', 'imf7', 'imf5', 'imf4', 'imf1', 'imf0']
+    # aux_features = ['load', 'imf3', 'imf2', 'imf8', 'imf6', 'imf7', 'imf5', 'imf4']
     # aux_features = ['load', 'imf3', 'imf2', 'imf8', 'imf6', 'imf7', 'imf5', 'imf4', 'imf1']
     # aux_features = ["load"]
     # for i in range(imfs_count):
@@ -90,11 +100,10 @@ if __name__ == '__main__':
 
     # LATENT_DIM = 5
     BATCH_SIZE = 32
-    EPOCHS = 50
 
     model = create_model_mtl_mtv_temperature(horizon=HORIZON, nb_train_samples=len(X_train),
                                  batch_size=32, feature_count=len(features), time_lag=time_step_lag, aux_feature_count=len(aux_features))
-    earlystop = EarlyStopping(monitor='val_mse', patience=10)
+    earlystop = EarlyStopping(monitor='val_loss', patience=10)
 
     file_path = output_dir + '/model_checkpoint/weights-improvement-{epoch:02d}.hdf5'
     check_point = ModelCheckpoint(file_path, monitor='val_loss', verbose=0, save_best_only=True,

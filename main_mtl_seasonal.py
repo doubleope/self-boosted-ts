@@ -2,8 +2,8 @@ from keras.callbacks import EarlyStopping
 import pandas as pd
 from common.TimeseriesTensor import TimeSeriesTensor
 from common.gp_log import store_training_loss, store_predict_points, flatten_test_predict
-from common.utils import load_data, split_train_validation_test, load_data_full, mape
-from ts_model import create_model, create_model_mtl_mtv_electricity
+from common.utils import load_data, split_train_validation_test, load_data_full, mape, load_seasonal_data
+from ts_model import create_model, create_seasonal_model_mtl
 from kgp.metrics import root_mean_squared_error as RMSE
 import matplotlib.pyplot as plt
 from keras.callbacks import ModelCheckpoint
@@ -21,32 +21,32 @@ import numpy as np
 
 if __name__ == '__main__':
 
+    HORIZON = 9
+    EPOCHS = 30
+
     time_step_lag = 6
-    # HORIZON = 3
-    HORIZON = 5
-    EPOCHS = 50
 
-    imfs_count = 13
+    datasource = 'electricity'
+    # datasource = 'temperature'
+    # datasource = 'exchange-rate'
+    mode = 'additive'
+    # mode = 'multiplicative'
 
-    data_dir = 'data'
-    # output_dir = 'output/electricity/mtl/lag' + str(time_step_lag)
-    output_dir = 'output/electricity/mtl_mtv/horizon_' + str(HORIZON) + '/lag' + str(time_step_lag)
+    data_dir = 'data/seasonal'
+    output_dir = 'output/seasonal/' + datasource + '/mtl_mtv/horizon_' + str(HORIZON) + '/lag' + str(time_step_lag)
 
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(output_dir + '/model_checkpoint', exist_ok=True)
 
-    multi_time_series = load_data_full(data_dir, datasource='electricity', imfs_count=imfs_count)
+    multi_time_series, valid_start_dt, test_start_dt, freq = load_seasonal_data(data_dir, datasource=datasource, mode=mode)
     print(multi_time_series.head())
 
-    #
-    # valid_start_dt = '2011-09-01 00:00:00'
-    # test_start_dt = '2011-11-01 00:00:00'
+    features = ["load", "Residual", "Seasonal", "Trend"]
+    targets = ["load", "Residual", "Seasonal", "Trend"]
 
-    valid_start_dt = '2013-05-26 14:15:00'
-    test_start_dt = '2014-03-14 19:15:00'
-    # features = ["load", "imf0", "imf1", "imf4", "imf5", "imf6", "imf7", "imf8", "imf9", "imf10", "imf11", "imf12"]
-    features = ["load", "imf2", "imf3"]
-    targets = ["load", "imf3", "imf2"]
+    time_format='%Y-%m-%d %H:%M:%S'
+    if freq == 'd':
+        time_format = '%Y-%m-%d'
 
     train_inputs, valid_inputs, test_inputs, y_scaler = split_train_validation_test(multi_time_series,
                                                      valid_start_time=valid_start_dt,
@@ -54,67 +54,50 @@ if __name__ == '__main__':
                                                      time_step_lag=time_step_lag,
                                                      horizon=HORIZON,
                                                      features=features,
-                                                     target=targets
+                                                     target=targets,
+                                                     freq=freq,
+                                                     time_format=time_format
                                                      )
-    # aux_features = ["load", "imf0", "imf1", "imf4", "imf5", "imf6", "imf7", "imf8", "imf9", "imf10", "imf11", "imf12"]
-    aux_features = ["load"]
-    for i in range(imfs_count):
-        l = 'imf' + str(i)
-        if l not in features:
-            aux_features.append(l)
 
-    aux_inputs, aux_valid_inputs, aux_test_inputs, aux_y_scaler = split_train_validation_test(multi_time_series,
-                                                     valid_start_time=valid_start_dt,
-                                                     test_start_time=test_start_dt,
-                                                     time_step_lag=time_step_lag,
-                                                     horizon=HORIZON,
-                                                     features=aux_features,
-                                                     target=["load"]
-                                                     )
+
 
     X_train = train_inputs['X']
     y1_train = train_inputs['target_load']
-    y2_train = train_inputs['target_imf3']
-    y3_train = train_inputs['target_imf2']
-    y_train = [y1_train, y2_train, y3_train]
+    y2_train = train_inputs['target_Residual']
+    y3_train = train_inputs['target_Seasonal']
+    y4_train = train_inputs['target_Trend']
+    y_train = [y1_train, y2_train, y3_train, y4_train]
 
     X_valid = valid_inputs['X']
     y1_valid = valid_inputs['target_load']
-    y2_valid = valid_inputs['target_imf3']
-    y3_valid = valid_inputs['target_imf2']
-    y_valid = [y1_valid, y2_valid, y3_valid]
+    y2_valid = valid_inputs['target_Residual']
+    y3_valid = valid_inputs['target_Seasonal']
+    y4_valid = valid_inputs['target_Trend']
+    y_valid = [y1_valid, y2_valid, y3_valid, y4_valid]
 
-    aux_train = aux_inputs['X']
-    aux_valid = aux_valid_inputs['X']
-    aux_test = aux_test_inputs['X']
 
-    # input_x = train_inputs['X']
     print("train_X shape", X_train.shape)
     print("valid_X shape", X_valid.shape)
-    print("aux_train shape", aux_train.shape)
-    # print("target shape", y_train.shape)
-    # print("training size:", len(train_inputs['X']), 'validation', len(valid_inputs['X']), 'test size:', len(test_inputs['X']) )
-    # print("sum sizes", len(train_inputs['X']) + len(valid_inputs['X']) + len(test_inputs['X']))
+
 
     # LATENT_DIM = 5
     BATCH_SIZE = 32
     # EPOCHS = 50
     # EPOCHS = 5
 
-    model = create_model_mtl_mtv_electricity(horizon=HORIZON, nb_train_samples=len(X_train),
-                                 batch_size=32, feature_count=len(features), lag_time=time_step_lag,
-                                             auxiliary_feature_count=len(aux_features))
+
+    model = create_seasonal_model_mtl(horizon=HORIZON, nb_train_samples=len(X_train), batch_size=32, feature_count=len(features), time_lag=time_step_lag)
     earlystop = EarlyStopping(monitor='val_loss', patience=10)
 
     file_path = output_dir + '/model_checkpoint/weights-improvement-{epoch:02d}.hdf5'
     check_point = ModelCheckpoint(file_path, monitor='val_loss', verbose=0, save_best_only=True,
                                   save_weights_only=True, mode='auto', period=1)
 
-    history = model.fit([X_train, aux_train],
+    history = model.fit(X_train,
                         y_train,
               batch_size=BATCH_SIZE,
               epochs=EPOCHS,
-              validation_data=([X_valid, aux_valid], y_valid),
+              validation_data=(X_valid, y_valid),
               callbacks=[earlystop, check_point],
               verbose=1)
 
@@ -126,10 +109,11 @@ if __name__ == '__main__':
     # Test the model
     X_test = test_inputs['X']
     y1_test = test_inputs['target_load']
-    y2_test = test_inputs['target_imf3']
-    y3_test = test_inputs['target_imf2']
+    y2_test = test_inputs['target_Residual']
+    y3_test = test_inputs['target_Seasonal']
+    y4_test = test_inputs['target_Trend']
 
-    y1_preds, y2_preds, y3_preds = model.predict([X_test, aux_test])
+    y1_preds, y2_preds, y3_preds, y4_preds = model.predict(X_test)
 
     y1_test = y_scaler.inverse_transform(y1_test)
     y1_preds = y_scaler.inverse_transform(y1_preds)
